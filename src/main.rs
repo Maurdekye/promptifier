@@ -114,9 +114,12 @@ fn parse_weight(maybe_weighted: &str) -> Result<(&str, f64), ParseWeightError> {
 fn generate(mut prompt: &str, rng: &mut ThreadRng) -> Result<String, ParseError> {
     let mut stack = Stack::new();
     let mut global_index = 0;
-    let parse_weight = |text, global_index| {
-        parse_weight(text)
-            .map_err(|err| ParseError::InvalidWeightSpecifier(global_index + err.index, err))
+    let parse_weight_and_apply = |text, stack: &mut Stack, global_index| {
+        let (text, weight) = parse_weight(text)
+            .map_err(|err| ParseError::InvalidWeightSpecifier(global_index + err.index, err))?;
+        stack.top.top.text.push_str(text);
+        stack.top.top.weight = weight;
+        Ok(())
     };
     loop {
         match prompt.find(&['|', '{', '}']) {
@@ -128,9 +131,7 @@ fn generate(mut prompt: &str, rng: &mut ThreadRng) -> Result<String, ParseError>
                 match post.chars().next() {
                     None => break,
                     Some('|') => {
-                        let (pre, weight) = parse_weight(pre, global_index)?;
-                        stack.top.top.text.push_str(pre);
-                        stack.top.top.weight = weight;
+                        parse_weight_and_apply(pre, &mut stack, global_index)?;
                         stack.top.push(Choice::new());
                     }
                     Some('{') => {
@@ -138,9 +139,7 @@ fn generate(mut prompt: &str, rng: &mut ThreadRng) -> Result<String, ParseError>
                         stack.push(global_index);
                     }
                     Some('}') => {
-                        let (pre, weight) = parse_weight(pre, global_index)?;
-                        stack.top.top.text.push_str(pre);
-                        stack.top.top.weight = weight;
+                        parse_weight_and_apply(pre, &mut stack, global_index)?;
                         match stack.pop() {
                             None => return Err(ParseError::UnexpectedClosingBrace(global_index)),
                             Some(frame) => stack.top.top.text.push_str(&frame.choose(rng).text),
@@ -152,9 +151,7 @@ fn generate(mut prompt: &str, rng: &mut ThreadRng) -> Result<String, ParseError>
             }
         }
     }
-    let (prompt, weight) = parse_weight(prompt, global_index)?;
-    stack.top.top.text.push_str(prompt);
-    stack.top.top.weight = weight;
+    parse_weight_and_apply(prompt, &mut stack, global_index)?;
     if !stack.stack.is_empty() {
         Err(ParseError::UnclosedBrace(stack.top.start_index))
     } else {
