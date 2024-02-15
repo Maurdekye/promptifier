@@ -57,6 +57,7 @@ fn generate(prompt: &str, rng: &mut ThreadRng) -> Result<String, ParseError> {
 }
 
 #[derive(Parser)]
+/// Handy tool for generating prompts from a random template
 struct Args {
     /// Source prompt to parse
     prompt: String,
@@ -72,6 +73,10 @@ struct Args {
     /// Print generated prompts to console
     #[clap(short, long, action, default_value_t=false)]
     verbose: bool,
+
+    /// Don't save the generated prompts; not very useful without --verbose
+    #[clap(short, long, action, default_value_t=false)]
+    dry_run: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -83,7 +88,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if args.verbose {
             println!("{prompt}");
         }
-        writeln!(out, "{prompt}")?;
+        if !args.dry_run {
+            writeln!(out, "{prompt}")?;
+        }
     }
     Ok(())
 }
