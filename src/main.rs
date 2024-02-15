@@ -71,24 +71,26 @@ struct Args {
     out: PathBuf,
 
     /// Print generated prompts to console
-    #[clap(short, long, action, default_value_t=false)]
+    #[clap(short, long, action, default_value_t = false)]
     verbose: bool,
 
     /// Don't save the generated prompts; not very useful without --verbose
-    #[clap(short, long, action, default_value_t=false)]
+    #[clap(short, long, action, default_value_t = false)]
     dry_run: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let mut out = File::create(args.out)?;
+    let mut out = (!args.dry_run)
+        .then(|| File::create(args.out))
+        .transpose()?;
     let mut rng = rand::thread_rng();
     for _ in 0..args.num {
         let prompt = generate(&args.prompt, &mut rng)?;
         if args.verbose {
             println!("{prompt}");
         }
-        if !args.dry_run {
+        if let Some(out) = &mut out {
             writeln!(out, "{prompt}")?;
         }
     }
