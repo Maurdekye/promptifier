@@ -58,6 +58,14 @@ fn generate(prompt: &str, rng: &mut ThreadRng) -> Result<String, ParseError> {
 
 #[derive(Parser)]
 /// Handy tool for generating prompts from a random template
+///
+/// Prompts in the form `a random {prompt|word}` choose a random word from the curly
+/// braces to select, separated by the pipes. The above could generate `a random prompt` or
+/// `a random word`.
+///
+/// Curly braces can be nested: `this {{large |}cake|{loud|tiny} boat} is not very nice`
+/// can generate `this cake is not very nice`, `this loud boat is not very nice`,
+/// `this large cake is not very nice`, etc.
 struct Args {
     /// Source prompt to parse
     prompt: String,
@@ -79,20 +87,25 @@ struct Args {
     dry_run: bool,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
-    let mut out = (!args.dry_run)
-        .then(|| File::create(args.out))
-        .transpose()?;
-    let mut rng = rand::thread_rng();
-    for _ in 0..args.num {
-        let prompt = generate(&args.prompt, &mut rng)?;
-        if args.verbose {
-            println!("{prompt}");
+fn main() {
+    let result = (|| -> Result<(), Box<dyn std::error::Error>> {
+        let args = Args::parse();
+        let mut out = (!args.dry_run)
+            .then(|| File::create(args.out))
+            .transpose()?;
+        let mut rng = rand::thread_rng();
+        for _ in 0..args.num {
+            let prompt = generate(&args.prompt, &mut rng)?;
+            if args.verbose {
+                println!("{prompt}");
+            }
+            if let Some(out) = &mut out {
+                writeln!(out, "{prompt}")?;
+            }
         }
-        if let Some(out) = &mut out {
-            writeln!(out, "{prompt}")?;
-        }
+        Ok(())
+    })();
+    if let Err(err) = result {
+        eprintln!("{err}");
     }
-    Ok(())
 }
