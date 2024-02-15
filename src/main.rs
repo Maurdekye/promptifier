@@ -163,7 +163,7 @@ fn generate(mut prompt: &str, rng: &mut ThreadRng) -> Result<String, ParseError>
 }
 
 #[derive(Parser)]
-/// Handy tool for generating prompts from a random template
+/// Simple utility for generating prompts from a random template.
 ///
 /// Prompts in the form `a random {prompt|word}` choose a random word from the curly
 /// braces to select, separated by the pipes. The above could generate `a random prompt` or
