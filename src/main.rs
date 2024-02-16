@@ -1,5 +1,6 @@
 use clap::Parser;
 use rand::prelude::*;
+use std::fs;
 use std::io::Write;
 use std::num::ParseFloatError;
 use std::{fs::File, path::PathBuf};
@@ -174,7 +175,11 @@ fn generate(mut prompt: &str, rng: &mut ThreadRng) -> Result<String, ParseError>
 /// to generate `ball`.
 struct Args {
     /// Source prompt to parse
-    prompt: String,
+    prompt: Option<String>,
+
+    /// File to take source prompt from
+    #[clap(short, long)]
+    input_file: Option<PathBuf>,
 
     /// Number of prompts to generate
     #[clap(short, long, default_value_t = 1)]
@@ -196,12 +201,17 @@ struct Args {
 fn main() {
     let result = (|| -> Result<(), Box<dyn std::error::Error>> {
         let args = Args::parse();
+        let prompt = match (args.prompt, args.input_file) {
+            (Some(prompt), _) => prompt,
+            (_, Some(file)) => fs::read_to_string(file)?,
+            _ => Err("No prompt source specified")?,
+        };
         let mut out = (!args.dry_run)
             .then(|| File::create(args.out))
             .transpose()?;
         let mut rng = rand::thread_rng();
         for _ in 0..args.num {
-            let prompt = generate(&args.prompt, &mut rng)?;
+            let prompt = generate(&prompt, &mut rng)?;
             if args.verbose {
                 println!("{prompt}");
             }
