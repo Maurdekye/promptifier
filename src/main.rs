@@ -256,7 +256,8 @@ struct Args {
     #[clap(short = 'g', long)]
     choice_guidance: Option<ChoiceGuidance>,
 
-    /// Ignore improperly formatted weights and interpret the full text with a weight of 1.
+    /// Ignore improperly formatted weights and interpret the full text, including the malformed 
+    /// weight specifier, as a choice with a weight of 1.
     /// Useful when combining with emphasis syntax common in diffusion UIs. Does not ignore
     /// errors produced from negative weights.
     #[clap(short = 'e', long, action)]

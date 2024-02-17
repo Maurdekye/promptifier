@@ -11,7 +11,7 @@ can generate `this cake is not very nice`, `this loud boat is not very nice`,
 `this large cake is not very nice`, etc.
 
 Choices may also be weighted: `{ball:1|box:3}` is 3x as likely to generate `box` as it is
-to generate `ball`.
+to generate `ball`. Weights can be any positive integer or decimal value.
 
 ```
 Usage: promptifier.exe [OPTIONS] [PROMPT]
@@ -33,7 +33,7 @@ Options:
   -g, --choice-guidance <CHOICE_GUIDANCE>
           Specify a guidance heuristic to use when making choices, overriding random selection [possible values: shortest, longest, least-likely, most-likely]
   -e, --ignore-invalid-weight-literals
-          Ignore improperly formatted weights and interpret the full text with a weight of 1. Useful when combining with emphasis syntax common in diffusion UIs. Does not ignore errors produced from negative weights
+          Ignore improperly formatted weights and interpret the full text, including the malformed weight specifier, as a choice with a weight of 1. Useful when combining with emphasis syntax common in diffusion UIs. Does not ignore errors produced from negative weights
   -h, --help
-          Print help (see more with '--help')
+          Print help
 ```
