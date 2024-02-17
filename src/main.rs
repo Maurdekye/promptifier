@@ -53,8 +53,8 @@ impl Frame {
         self.choices.push(std::mem::replace(&mut self.top, choice));
     }
 
-    fn choose(self, rng: &mut ThreadRng, target_length: &Option<LengthTarget>) -> Choice {
-        match target_length {
+    fn choose(self, rng: &mut ThreadRng, guidance: &Option<ChoiceGuidance>) -> Choice {
+        match guidance {
             None => {
                 let weight_sum =
                     self.choices.iter().map(|c| c.weight).sum::<f64>() + self.top.weight;
@@ -68,12 +68,25 @@ impl Frame {
                 }
                 self.top
             }
-            Some(target) => {
+            Some(guidance) => {
                 let mut options: Vec<_> = self.choices.into_iter().chain(once(self.top)).collect();
-                options.sort_by_key(|c| c.text.len());
-                match target {
-                    LengthTarget::Longest => options.pop().unwrap(),
-                    LengthTarget::Shortest => options.swap_remove(0),
+                match guidance {
+                    ChoiceGuidance::Longest | ChoiceGuidance::Shortest => {
+                        options.sort_by_key(|c| c.text.len())
+                    }
+                    ChoiceGuidance::MostLikely | ChoiceGuidance::LeastLikely => {
+                        options.sort_by(|a, b| {
+                            a.weight
+                                .partial_cmp(&b.weight)
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                        })
+                    }
+                }
+                match guidance {
+                    ChoiceGuidance::Longest | ChoiceGuidance::MostLikely => options.pop().unwrap(),
+                    ChoiceGuidance::Shortest | ChoiceGuidance::LeastLikely => {
+                        options.swap_remove(0)
+                    }
                 }
             }
         }
@@ -106,53 +119,66 @@ impl Stack {
 }
 
 #[derive(Clone, Debug, Error)]
-#[error("Invalid weight specifier '{specifier}': {parse_error}")]
+#[error("'{specifier}': {parse_error}")]
 struct ParseWeightError {
     specifier: String,
     index: usize,
-    parse_error: ParseFloatError,
+    parse_error: ParseWeightErrorKind,
 }
 
-fn parse_weight(maybe_weighted: &str) -> Result<(&str, f64), ParseWeightError> {
-    let Some((text, weight_text)) = maybe_weighted.split_once(":") else {
+#[derive(Clone, Debug, Error)]
+enum ParseWeightErrorKind {
+    #[error("{0}")]
+    FloatParse(#[from] ParseFloatError),
+    #[error("Weights cannot be negative")]
+    NegativeWeight,
+}
+
+fn parse_weight(
+    maybe_weighted: &str,
+    ignore_invalid_weight_literals: bool,
+) -> Result<(&str, f64), ParseWeightError> {
+    let Some((text, weight_text)) = maybe_weighted.rsplit_once(":") else {
         return Ok((maybe_weighted, 1.0));
     };
-    let weight: f64 = weight_text
-        .parse()
-        .map_err(|parse_error| ParseWeightError {
+    let maybe_weight = weight_text.parse().map_err(|parse_error| ParseWeightError {
+        specifier: weight_text.to_string(),
+        index: text.len() + 1,
+        parse_error: ParseWeightErrorKind::FloatParse(parse_error),
+    });
+    match maybe_weight {
+        Ok(weight) if weight >= 0.0 => Ok((text, weight)),
+        Ok(_) => Err(ParseWeightError {
             specifier: weight_text.to_string(),
             index: text.len() + 1,
-            parse_error,
-        })?;
-    Ok((text, weight))
+            parse_error: ParseWeightErrorKind::NegativeWeight,
+        }),
+        _ if ignore_invalid_weight_literals => Ok((maybe_weighted, 1.0)),
+        Err(err) => Err(err),
+    }
 }
 #[derive(ValueEnum, Clone, Debug, Serialize)]
-enum LengthTarget {
+enum ChoiceGuidance {
     Shortest,
     Longest,
+    LeastLikely,
+    MostLikely,
 }
 
 struct GenerationOptions {
-    target_length: Option<LengthTarget>,
-}
-
-impl Default for GenerationOptions {
-    fn default() -> Self {
-        Self {
-            target_length: None,
-        }
-    }
+    choice_guidance: Option<ChoiceGuidance>,
+    ignore_invalid_weight_literals: bool,
 }
 
 fn generate(
     mut prompt: &str,
     rng: &mut ThreadRng,
-    options: GenerationOptions,
+    options: &GenerationOptions,
 ) -> Result<String, ParseError> {
     let mut stack = Stack::new();
     let mut global_index = 0;
     let parse_weight_and_apply = |text, stack: &mut Stack, global_index| {
-        let (text, weight) = parse_weight(text)
+        let (text, weight) = parse_weight(text, options.ignore_invalid_weight_literals)
             .map_err(|err| ParseError::InvalidWeightSpecifier(global_index + err.index, err))?;
         stack.top.top.text.push_str(text);
         stack.top.top.weight = weight;
@@ -183,7 +209,7 @@ fn generate(
                                 .top
                                 .top
                                 .text
-                                .push_str(&frame.choose(rng, &options.target_length).text),
+                                .push_str(&frame.choose(rng, &options.choice_guidance).text),
                         }
                     }
                     _ => unreachable!(),
@@ -196,11 +222,10 @@ fn generate(
     if !stack.stack.is_empty() {
         Err(ParseError::UnclosedBrace(stack.top.start_index))
     } else {
-        Ok(stack.top.choose(rng, &options.target_length).text)
+        Ok(stack.top.choose(rng, &options.choice_guidance).text)
     }
 }
 
-#[derive(Parser)]
 /// Simple utility for generating prompts from a random template.
 ///
 /// Prompts in the form `a random {prompt|word}` choose a random word from the curly
@@ -213,6 +238,7 @@ fn generate(
 ///
 /// Choices may also be weighted: `{ball:1|box:3}` is 3x as likely to generate `box` as it is
 /// to generate `ball`.
+#[derive(Parser)]
 struct Args {
     /// Source prompt to parse
     prompt: Option<String>,
@@ -230,39 +256,50 @@ struct Args {
     out: PathBuf,
 
     /// Print generated prompts to console
-    #[clap(short, long, action, default_value_t = false)]
+    #[clap(short, long, action)]
     verbose: bool,
 
     /// Don't save the generated prompts; not very useful without --verbose
-    #[clap(short, long, action, default_value_t = false)]
+    #[clap(short, long, action)]
     dry_run: bool,
 
-    /// Attempt to generate the longest or shortest possible prompt
-    #[clap(short, long)]
-    length_target: Option<LengthTarget>,
+    /// Specify a guidance heuristic to use when making choices, overriding random selection
+    #[clap(short = 'g', long)]
+    choice_guidance: Option<ChoiceGuidance>,
+
+    /// Ignore improperly formatted weights and interpret the full text with a weight of 1.
+    /// Useful when combining with emphasis syntax common in diffusion UIs. Does not ignore
+    /// errors produced from negative weights.
+    #[clap(short = 'e', long, action)]
+    ignore_invalid_weight_literals: bool,
 }
 
 fn main() {
     let result = (|| -> Result<(), Box<dyn std::error::Error>> {
-        let args = Args::parse();
-        let prompt = match (args.prompt, args.input_file) {
+        let Args {
+            prompt,
+            input_file,
+            num,
+            out,
+            verbose,
+            dry_run,
+            choice_guidance,
+            ignore_invalid_weight_literals,
+        } = Args::parse();
+        let prompt = match (prompt, input_file) {
             (Some(prompt), _) => prompt,
             (_, Some(file)) => fs::read_to_string(file)?,
             _ => Err("No prompt source specified")?,
         };
-        let mut out = (!args.dry_run)
-            .then(|| File::create(args.out))
-            .transpose()?;
+        let mut out = (!dry_run).then(|| File::create(out)).transpose()?;
         let mut rng = rand::thread_rng();
-        for _ in 0..args.num {
-            let prompt = generate(
-                &prompt,
-                &mut rng,
-                GenerationOptions {
-                    target_length: args.length_target.clone(),
-                },
-            )?;
-            if args.verbose {
+        let options = GenerationOptions {
+            choice_guidance,
+            ignore_invalid_weight_literals,
+        };
+        for _ in 0..num {
+            let prompt = generate(&prompt, &mut rng, &options)?;
+            if verbose {
                 println!("{prompt}");
             }
             if let Some(out) = &mut out {
