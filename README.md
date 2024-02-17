@@ -1,10 +1,10 @@
 # Promptifier
 
-Simple utility for generating prompts from a random template.
+Simple utility for randomly generating prompts from a template.
 
-Prompts in the form `a random {prompt|word}` choose a random word from the curly
-braces to select, separated by the pipes. The above could generate `a random prompt` or
-`a random word`.
+This tool generates prompts from templates in the form `a random {prompt|word}` by choosing a 
+random word from the curly braces to select, separated by the pipes. The above could 
+generate `a random prompt` or `a random word`.
 
 Curly braces can be nested: `this {{large |}cake|{loud|tiny} boat} is not very nice`
 can generate `this cake is not very nice`, `this loud boat is not very nice`,

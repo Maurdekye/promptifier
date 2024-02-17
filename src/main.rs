@@ -53,7 +53,7 @@ impl Frame {
         self.choices.push(std::mem::replace(&mut self.top, choice));
     }
 
-    fn choose(self, rng: &mut ThreadRng, guidance: &Option<ChoiceGuidance>) -> Choice {
+    fn choose(self, rng: &mut StdRng, guidance: &Option<ChoiceGuidance>) -> Choice {
         match guidance {
             None => {
                 let weight_sum =
@@ -172,7 +172,7 @@ struct GenerationOptions {
 
 fn generate(
     mut prompt: &str,
-    rng: &mut ThreadRng,
+    rng: &mut StdRng,
     options: &GenerationOptions,
 ) -> Result<String, ParseError> {
     let mut stack = Stack::new();
@@ -262,6 +262,10 @@ struct Args {
     /// errors produced from negative weights.
     #[clap(short = 'e', long, action)]
     ignore_invalid_weight_literals: bool,
+
+    /// Seed for the random number generator. Pass the same seed to get the same set of prompts.
+    #[clap(short, long)]
+    seed: Option<u64>,
 }
 
 fn main() {
@@ -275,6 +279,7 @@ fn main() {
             dry_run,
             choice_guidance,
             ignore_invalid_weight_literals,
+            seed,
         } = Args::parse();
         let prompt = match (prompt, input_file) {
             (Some(prompt), _) => prompt,
@@ -282,7 +287,10 @@ fn main() {
             _ => Err("No prompt source specified")?,
         };
         let mut out = (!dry_run).then(|| File::create(out)).transpose()?;
-        let mut rng = rand::thread_rng();
+        let mut rng = match seed {
+            Some(seed) => StdRng::seed_from_u64(seed),
+            None => StdRng::from_entropy(),
+        };
         let options = GenerationOptions {
             choice_guidance,
             ignore_invalid_weight_literals,
