@@ -34,6 +34,8 @@ Options:
           Specify a guidance heuristic to use when making choices, overriding random selection [possible values: shortest, longest, least-likely, most-likely]
   -e, --ignore-invalid-weight-literals
           Ignore improperly formatted weights and interpret the full text, including the malformed weight specifier, as a choice with a weight of 1. Useful when combining with emphasis syntax common in diffusion UIs. Does not ignore errors produced from negative weights
+  -s, --seed <SEED>
+          Seed for the random number generator. Pass the same seed to get the same set of prompts
   -h, --help
           Print help
 ```
