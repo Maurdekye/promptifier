@@ -1,7 +1,9 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use rand::prelude::*;
+use serde::Serialize;
 use std::fs;
 use std::io::Write;
+use std::iter::once;
 use std::num::ParseFloatError;
 use std::{fs::File, path::PathBuf};
 use thiserror::Error;
@@ -51,17 +53,30 @@ impl Frame {
         self.choices.push(std::mem::replace(&mut self.top, choice));
     }
 
-    fn choose(self, rng: &mut ThreadRng) -> Choice {
-        let weight_sum = self.choices.iter().map(|c| c.weight).sum::<f64>() + self.top.weight;
-        let weighted_index: f64 = rng.gen();
-        let mut weighted_index = weighted_index * weight_sum;
-        for choice in self.choices {
-            if weighted_index <= choice.weight {
-                return choice;
+    fn choose(self, rng: &mut ThreadRng, target_length: &Option<LengthTarget>) -> Choice {
+        match target_length {
+            None => {
+                let weight_sum =
+                    self.choices.iter().map(|c| c.weight).sum::<f64>() + self.top.weight;
+                let weighted_index: f64 = rng.gen();
+                let mut weighted_index = weighted_index * weight_sum;
+                for choice in self.choices {
+                    if weighted_index <= choice.weight {
+                        return choice;
+                    }
+                    weighted_index -= choice.weight;
+                }
+                self.top
             }
-            weighted_index -= choice.weight;
+            Some(target) => {
+                let mut options: Vec<_> = self.choices.into_iter().chain(once(self.top)).collect();
+                options.sort_by_key(|c| c.text.len());
+                match target {
+                    LengthTarget::Longest => options.pop().unwrap(),
+                    LengthTarget::Shortest => options.swap_remove(0),
+                }
+            }
         }
-        self.top
     }
 }
 
@@ -111,8 +126,29 @@ fn parse_weight(maybe_weighted: &str) -> Result<(&str, f64), ParseWeightError> {
         })?;
     Ok((text, weight))
 }
+#[derive(ValueEnum, Clone, Debug, Serialize)]
+enum LengthTarget {
+    Shortest,
+    Longest,
+}
 
-fn generate(mut prompt: &str, rng: &mut ThreadRng) -> Result<String, ParseError> {
+struct GenerationOptions {
+    target_length: Option<LengthTarget>,
+}
+
+impl Default for GenerationOptions {
+    fn default() -> Self {
+        Self {
+            target_length: None,
+        }
+    }
+}
+
+fn generate(
+    mut prompt: &str,
+    rng: &mut ThreadRng,
+    options: GenerationOptions,
+) -> Result<String, ParseError> {
     let mut stack = Stack::new();
     let mut global_index = 0;
     let parse_weight_and_apply = |text, stack: &mut Stack, global_index| {
@@ -143,7 +179,11 @@ fn generate(mut prompt: &str, rng: &mut ThreadRng) -> Result<String, ParseError>
                         parse_weight_and_apply(pre, &mut stack, global_index)?;
                         match stack.pop() {
                             None => return Err(ParseError::UnexpectedClosingBrace(global_index)),
-                            Some(frame) => stack.top.top.text.push_str(&frame.choose(rng).text),
+                            Some(frame) => stack
+                                .top
+                                .top
+                                .text
+                                .push_str(&frame.choose(rng, &options.target_length).text),
                         }
                     }
                     _ => unreachable!(),
@@ -156,7 +196,7 @@ fn generate(mut prompt: &str, rng: &mut ThreadRng) -> Result<String, ParseError>
     if !stack.stack.is_empty() {
         Err(ParseError::UnclosedBrace(stack.top.start_index))
     } else {
-        Ok(stack.top.choose(rng).text)
+        Ok(stack.top.choose(rng, &options.target_length).text)
     }
 }
 
@@ -196,6 +236,10 @@ struct Args {
     /// Don't save the generated prompts; not very useful without --verbose
     #[clap(short, long, action, default_value_t = false)]
     dry_run: bool,
+
+    /// Attempt to generate the longest or shortest possible prompt
+    #[clap(short, long)]
+    length_target: Option<LengthTarget>,
 }
 
 fn main() {
@@ -211,7 +255,13 @@ fn main() {
             .transpose()?;
         let mut rng = rand::thread_rng();
         for _ in 0..args.num {
-            let prompt = generate(&prompt, &mut rng)?;
+            let prompt = generate(
+                &prompt,
+                &mut rng,
+                GenerationOptions {
+                    target_length: args.length_target.clone(),
+                },
+            )?;
             if args.verbose {
                 println!("{prompt}");
             }
