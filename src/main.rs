@@ -227,17 +227,6 @@ fn generate(
 }
 
 /// Simple utility for generating prompts from a random template.
-///
-/// Prompts in the form `a random {prompt|word}` choose a random word from the curly
-/// braces to select, separated by the pipes. The above could generate `a random prompt` or
-/// `a random word`.
-///
-/// Curly braces can be nested: `this {{large |}cake|{loud|tiny} boat} is not very nice`
-/// can generate `this cake is not very nice`, `this loud boat is not very nice`,
-/// `this large cake is not very nice`, etc.
-///
-/// Choices may also be weighted: `{ball:1|box:3}` is 3x as likely to generate `box` as it is
-/// to generate `ball`.
 #[derive(Parser)]
 struct Args {
     /// Source prompt to parse

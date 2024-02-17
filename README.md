@@ -14,15 +14,26 @@ Choices may also be weighted: `{ball:1|box:3}` is 3x as likely to generate `box`
 to generate `ball`.
 
 ```
-Usage: promptifier.exe [OPTIONS] <PROMPT>
+Usage: promptifier.exe [OPTIONS] [PROMPT]
 
 Arguments:
-  <PROMPT>  Source prompt to parse
+  [PROMPT]  Source prompt to parse
 
 Options:
-  -n, --num <NUM>  Number of prompts to generate [default: 1]
-  -o, --out <OUT>  Output file [default: prompts.txt]
-  -v, --verbose    Print generated prompts to console
-  -d, --dry-run    Don't save the generated prompts; not very useful without --verbose
-  -h, --help       Print help (see more with '--help')
+  -i, --input-file <INPUT_FILE>
+          File to take source prompt from
+  -n, --num <NUM>
+          Number of prompts to generate [default: 1]
+  -o, --out <OUT>
+          Output file [default: prompts.txt]
+  -v, --verbose
+          Print generated prompts to console
+  -d, --dry-run
+          Don't save the generated prompts; not very useful without --verbose
+  -g, --choice-guidance <CHOICE_GUIDANCE>
+          Specify a guidance heuristic to use when making choices, overriding random selection [possible values: shortest, longest, least-likely, most-likely]
+  -e, --ignore-invalid-weight-literals
+          Ignore improperly formatted weights and interpret the full text with a weight of 1. Useful when combining with emphasis syntax common in diffusion UIs. Does not ignore errors produced from negative weights
+  -h, --help
+          Print help (see more with '--help')
 ```
